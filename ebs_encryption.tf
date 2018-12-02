@@ -1,11 +1,31 @@
 # Configure the AWS Provider
 provider "aws" {}
 
+resource "aws_security_group" "ebs_enc_policy" {
+  name = "ebs-enc-policy"
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 resource "aws_instance" "couchdb" {
   ami           = "ami-0c5199d385b432989"
   instance_type = "t2.micro"
   key_name      = "merxer.io"
   availability_zone = "ap-southeast-1a"
+  vpc_security_group_ids = ["${aws_security_group.ebs_enc_policy.id}"]
+
   user_data =<<-EOF
 	    #!/bin/bash
 	    apt update
@@ -36,4 +56,29 @@ resource "aws_instance" "couchdb" {
   tags {
     Name = "Source"
   }
+
+  volume_tags {
+    Name = "VolumeSource"
+  }
 }
+
+data "aws_ebs_volume" "no_enc_volume" {
+  most_recent = true
+  filter {
+    name = "volume-type"
+    values = ["gp2"]
+  }
+  filter {
+    name = "tag:Name"
+    values = ["VolumeSource"]
+  }
+}
+
+resource "aws_ebs_snapshot" "no_enc_snapshot" {
+  volume_id = "${data.aws_ebs_volume.no_enc_volume.id}"
+
+  tags {
+    Name = "snap-no-enc"
+  }
+}
+
